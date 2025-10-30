@@ -1,0 +1,128 @@
+---
+title: "EV Power - Lab 4 Project Report"
+format: typst
+---
+
+# Example Solution 1
+
+## **Part 0: libraries**
+
+```{r}
+library(tidyverse)
+library(sf)         
+library(ggplot2)     
+library(readr)
+library(janitor)     
+library(leaflet)     
+library(usmap)       
+```
+
+## **Part 1:** **Defining Research Question**
+
+Chosen Question: Did renewable energy use increase faster than total energy use from 2021 to 2023
+
+## **Part 2: Data Preparation and Cleaning**
+
+```{r}
+average_price <- read.csv("data/av-energy-price-2021-2023.csv") |> clean_names()
+reg_by_state <- read.csv("data/ev-registrations-by-state-2023.csv") |> clean_names()
+renew_2021 <- read.csv("data/renew-use-2021.csv") |> clean_names()
+renew_2022 <- read.csv("data/renew-use-2022.csv") |> clean_names()
+renew_2023 <- read.csv("data/renew-use-2023.csv") |> clean_names()
+total_2021 <- read.csv("data/total-use-2021.csv") |> clean_names()
+total_2022 <- read.csv("data/total-use-2022.csv") |> clean_names()
+total_2023 <- read.csv("data/total-use-2023.csv") |> clean_names()
+
+renew_2021$year <- 2021
+renew_2022$year <- 2022
+renew_2023$year <- 2023
+total_2021$year <- 2021
+total_2022$year <- 2022
+total_2023$year <- 2023
+
+average_price_df <- data.frame(raw = average_price$total_energy_average_price_dollars_per_million_btu, 
+                               stringsAsFactors = FALSE)
+
+average_price_df <- average_price_df[-c(1,2), , drop = FALSE]
+
+average_price_clean <- average_price_df %>%
+  tidyr::separate(
+    col = "raw",
+    into = c("state", "2021", "2022", "2023"),
+    sep = ",",
+    extra = "merge"
+  ) %>%
+  mutate(
+    state = str_trim(state),
+    `2021` = str_extract(`2021`, "[0-9.]+") %>% as.numeric(),
+    `2022` = str_extract(`2022`, "[0-9.]+") %>% as.numeric(),
+    `2023` = str_extract(`2023`, "[0-9.]+") %>% as.numeric()
+  )
+
+price_long <- average_price_clean %>%
+  pivot_longer(
+    cols = c("2021", "2022", "2023"),
+    names_to = "year",
+    values_to = "price_per_mmbtu"
+  ) %>%
+  mutate(year = as.numeric(year))
+
+
+```
+
+## **Part 3: Joining / Pivoting Datasets for Analysis**
+
+```{r}
+renew_21_22 <- renew_2021_clean |>
+    full_join(
+        renew_2022_clean |>
+            select(state, energy_source, renewable_use_2022),
+        by = c("state", "energy_source")
+    )
+
+renew_all <- renew_21_22 |>
+    full_join(
+        renew_2023_clean |>
+            select(state, energy_source, renewable_use_2023),
+        by = c("state", "energy_source")
+    )
+
+renew_all <- renew_all |> 
+    select(-year)
+
+renew_long <- renew_all |>
+  pivot_longer(
+    cols = starts_with("renewable_use_"),
+    names_to = "year",
+    values_to = "renewable_use"
+  ) |>
+  mutate(
+    year = case_when(
+      year == "renewable_use_2021" ~ 2021,
+      year == "renewable_use_2022" ~ 2022,
+      year == "renewable_use_2023" ~ 2023
+    )
+  )
+
+renew_summary <- renew_long |>
+  group_by(year) |>
+  summarize(total_renewable = sum(as.numeric(renewable_use), na.rm = TRUE))
+
+```
+
+## **Part 4: Mapping Visualization**
+
+```{r}
+
+
+ggplot(renew_long, aes(x = factor(year), y = renewable_use, fill = state)) +
+  geom_col() +
+  labs(
+    title = "State Renewable Energy Contributions by Year",
+    x = "Year",
+    y = "Renewable Energy Use (MMBtu)",
+    fill = "State"
+  ) +
+  theme_minimal() 
+
+```
